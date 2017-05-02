@@ -15,28 +15,61 @@
         </style>
         <script>
 
+
 /* CONFIGURATION */
 
 userURL = "http://community.zeit.de/user/{user}";
+commentsURL = "http://community.zeit.de/user/{user}?page={page}";
+
+userData = {
+    "name" : /<h2 class="title">(.+)<\/h2>/g,
+    "pic"  : /<div class="user-picture">[\s|\n]+<img typeof="foaf:Image" src="(.+)" alt="/g,
+    "rec"  : /<div class="usr-rec-cmts">[\s|\n]+([\d]+)/g
+}
+commentsData = /<div class="usr-prf-cmt">([\S\s]*?)<\/div><\/div>/g;
+commentData = {
+    "url" : /<a href="(http:\/\/.*?)">.*?<\/a>/,
+    "title" : /\d+">(.*?)<\/a>/,
+    "text" : /<\/a>(<p>[\S\s]*?<\/p>)<div class="timestamp">/,
+    "more" : /">(mehr)<\/a><\/p><div class="timestamp">/,
+    "date" : /<div class="timestamp">(.*?)$/
+}
+
 
 /* SOME GLOBALS */
 
 var searchform, searchquery, searchuser, searchsubmit;
-var username, useravatar, userlink;
-var list, info;
+var userdata, username, userrec, useravatar, userlink;
+var list, infos;
+
+
+/* PROGRAM */
 
 var init = function () {
     searchform = getID("searchform");
     searchquery = getID("searchquery");
     searchuser = getID("searchuser");
     searchsubmit = getID("searchsubmit");
+    
+    userdata = getID("userdata");
+    username = getID("username");
+    useravatar = getID("useravatar");
+    userlink = getID("userlink");
+    userrec = getID("userrec");
+    
     list = getID("list");
-    info = getID("info");
+    infos = getID("infos");
     
     searchsubmit.addEventListener("click", search);
+    
+    document.addEventListener("keydown", function (e) {
+        if (e.keyCode == 13) search();
+    });
 }
 
 var search = function (e) {
+    clear();
+    
     var u = searchuser.value;
     var q = searchquery.value;
     
@@ -45,15 +78,77 @@ var search = function (e) {
     u = u.replace(/[^0-9a-zA-Z\-]/g, "");
     u = u.replace(/\-+/, "-");
     
+    if (!u) {
+        info("Bitte gib einen Benutzernamen ein");
+        return;
+    }
+        
     var uurl = userURL.replace("{user}", u);
     
-    console.log(uurl);
-    
-    ajax(uurl, "html", function (r) { console.log(r); });
+    ajax(uurl, "html", function (r) {
+        fetchUser(r, uurl);
+        fetchComments(r);
+    });
 }
 
+var fetchUser = function (res, url) {
+    if (!res) {
+        info("Benutzer nicht gefunden");
+        return;
+    }
+    var data = exploitData(res, userData);
+    username.innerHTML = data.name;
+    userrec.innerHTML = data.rec;
+    useravatar.style.backgroundImage = "url('" + data.pic + "')";
+    userlink.href = url;
+}
+
+var fetchComments = function (res) {
+    //page = page || 0;
+    var cs = exploitMultiple(res, commentsData);
+    for (var i = 0; i < cs.length; i++) {
+        var c = exploitData(cs[i], commentData);
+    }
+}
+
+exploitData = function (data, rules) {
+    var res = {};
+    for (var i in rules) {
+        if (!rules.hasOwnProperty(i)) continue;
+        var d = rules[i].exec(data);
+        if (d)
+            res[i] = d[1];
+        rules[i].lastIndex = 0;
+    }
+    return res;
+}
+
+exploitMultiple = function (data, rule) {
+    var res = [];
+    do {
+        var a = rule.exec(data);
+        if (a) res.push(a[1]);
+    } while (a);
+    return res;
+}
+
+var clear = function () {
+    while (list.firstChild) list.removeChild(list.firstChild);
+    while (infos.firstChild) infos.removeChild(infos.firstChild);
+    
+    username.innerHTML = "";
+    userrec.innerHTML = "";
+    useravatar.style.backgroundImage = "";
+    userlink.href = "";
+}
+
+var info = function (i) {
+    var e = element("li", {}, infos);
+    e.innerHTML = i;
+}
 
 document.addEventListener("DOMContentLoaded", init);
+
 
 /* LITTLE HELPERS */
 
@@ -79,22 +174,38 @@ var ajax = function (query, type, callback) {
                     callback(request.responseText);
             } else
                 callback();
+        } else if (request.readyState == 4) {
+            callback();
         }
     }
     request.open("GET", query, true);
     request.send();
 }
-            
+
+
+/* LAYOUT */
         </script>
     </head>
     <body>
+        
         <div id="searchform">
-            <input type="text" id="searchuser" placeholder="Benutzer"></input>
+            <input type="text" id="searchuser" placeholder="Benutzer" value="Gertrud H."></input>
             <label for="searchuser">Benutzername, Benutzer-ID, Benutzer-URL</label>
             <input type="text" id="searchquery" placeholder="Suchbegriff"></input>
             <label for="searchuser">Suchbegriff (Leer für alle Kommentare)</label>
             <button id="searchsubmit">Suchen</button>
         </div>
-        <div id="info"></div>
+        
+        <div id="userdata">
+            <a href="" id="userlink" target="_blank">
+                <div id="useravatar"></div>
+                <div id="username"></div>
+                <div id="userrec"></div>
+            </a>
+        </div>
+        
+        <ul id="infos"></ul>
+        
         <ul id="list"></ul>
+        
         <div id="help">
