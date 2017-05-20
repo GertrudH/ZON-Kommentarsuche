@@ -10,9 +10,6 @@
         
         <meta name="viewport" content="width=device-width, minimum-scale=1, maximum-scale=1, initial-scale=1">
 
-        <style>
-            
-        </style>
         <script>
 
 
@@ -29,12 +26,26 @@ userData = {
 commentsData = /<div class="usr-prf-cmt">([\S\s]*?)<\/div><\/div>/g;
 commentData = {
     "url" : /<a href="(http:\/\/.*?)">.*?<\/a>/,
+    "cid" : /&amp;cid=([0-9]*)#cid-/,
     "title" : /\d+">(.*?)<\/a>/,
     "text" : /<\/a>(<p>[\S\s]*?<\/p>)<div class="timestamp">/,
     "more" : /">(mehr)<\/a><\/p><div class="timestamp">/,
     "date" : /<div class="timestamp">(.*?)$/
 }
-
+commentsNextPage = /<span class="pgr-next"><a href=".*?page=([0-9]+)/;
+commentHTML = '<article id="cid-{cid}"[\\S\\s]*?data-ct-column="[0-9]+">([\\S\\s]*?)<\/article>';
+commentContent = {
+    "time" : /#[0-9]+\.?[0-9]* &nbsp;—&nbsp; ([\S\s]*?)<\/a>/,
+    "likes" : /<span class="js-comment-recommendations">([0-9]+)/,
+    "text" : /<div class="comment__body">([\S\s]*?)<\/div>/,
+    "url" : /data-ct-label="datum" href="(.*?)">/,
+    "origin" : /(<a class="comment__origin[\S\s]*?<\/a>)/
+}
+commentMeta = {
+    "sub" : /<span class="article-heading__kicker">(.+?)<\/span>/,
+    "head" : /<span class="article-heading__title">(.+?)<\/span>/,
+    "url" : /<link itemprop="mainEntityOfPage" href="(.+?)">/
+}
 
 /* SOME GLOBALS */
 
@@ -59,6 +70,7 @@ var init = function () {
     
     list = getID("list");
     infos = getID("infos");
+    nextpage = getID("nextpage");
     
     searchsubmit.addEventListener("click", search);
     
@@ -86,12 +98,82 @@ var search = function (e) {
     var uurl = userURL.replace("{user}", u);
     
     ajax(uurl, "html", function (r) {
-        fetchUser(r, uurl);
-        fetchComments(r);
+        fetchUser(r, uurl, u);
+        fetchComments(r, u, q);
+        fetchNextPage(r, u, q);
     });
 }
 
-var fetchUser = function (res, url) {
+var drawComment = function (data, query) {
+    
+    if (query) {
+        var regex = new RegExp("(" + query + ")", "ig");
+        data["text"] = data["text"].replace(regex, "<span class=query>$1</span>");
+    }
+    var li = element("li", {"data-id":data["cid"]});
+    
+    var meta = element("div", {"class":"meta"}, li);
+    
+    var a = element("a", {"href":data["url"], "class":"time", "target":"_blank"}, meta);
+    a.textContent = data["time"];
+    
+    if (data["origin"]) {
+        var orig = element("span", {"class":"origin"}, meta);
+        orig.innerHTML = data["origin"];
+    }
+    
+    var likes = element("span", {"class":"likes"}, meta);
+    likes.textContent = data["likes"];
+    
+    var a = element("span", {"class":"link"}, meta);
+    a.textContent = data["url"]
+    
+    var div = element("div", {"class":"comment"}, li);
+    div.innerHTML = data["text"];
+    
+    var foot = element("div", {"class":"article"}, li);
+    
+    var article_link = element("a", {"href":data["article"]["url"]}, foot);
+    
+    var article_sub = element("h4", {}, article_link);
+    article_sub.innerHTML = data["article"]["sub"];
+    
+    var article_head = element("h3", {}, article_link);
+    article_head.innerHTML = data["article"]["head"];
+    
+    var _c = list.children;
+    var c = [];
+    for (var i = 0; i < _c.length; i++)
+        c.push(_c[i])
+    if (c.length) {
+        var s = 0;
+        var cid = data["cid"];
+        for (var i = 0; i < c.length; i++) {
+            var attr = c[i].getAttribute("data-id");
+            if (!s && cid > attr) {
+                list.insertBefore(li, list.firstChild);
+                return;
+            }
+            if (!s && cid < attr) {
+                s = 1;
+                continue;
+            }
+            if (s && cid > attr) {
+                list.insertBefore(li, c[i]);
+                return;
+            }
+        }
+        list.appendChild(li);
+    } else {
+        list.appendChild(li);
+    }
+}
+
+var quoteRegex = function (q) {
+    return q.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+var fetchUser = function (res, url, user) {
     if (!res) {
         info("Benutzer nicht gefunden");
         return;
@@ -101,13 +183,55 @@ var fetchUser = function (res, url) {
     userrec.innerHTML = data.rec;
     useravatar.style.backgroundImage = "url('" + data.pic + "')";
     userlink.href = url;
+    document.body.classList.add("active")
 }
 
-var fetchComments = function (res) {
+var fetchComments = function (res, user, query) {
     //page = page || 0;
     var cs = exploitMultiple(res, commentsData);
     for (var i = 0; i < cs.length; i++) {
         var c = exploitData(cs[i], commentData);
+        ajax(c["url"], "html", (function (cid, usr, q) {
+            return function (r) {
+                fetchComment(r, cid, usr, q);
+            }
+        })(c["cid"], user, query));
+    }
+}
+
+var fetchNextPage = function (res, user, query) {
+    var n = exploitSingle(res, commentsNextPage);
+    if (n) {
+        ajax(commentsURL.replace("{user}", user).replace("{page}", n), "html", function (r) {
+            fetchComments(r, user, query);
+            if (query) {
+                fetchNextPage(r, user, query);
+                console.log("next")
+            } else {
+                nextpage.classList.add("visible");
+                nextpage.onclick = function () {
+                    fetchNextPage(r, user, query);
+                }
+            }
+        });
+    } else {
+        nextpage.classList.remove("visible");
+    }
+}
+
+var fetchComment = function (res, cid, user, query) {
+    query = quoteRegex(query);
+    var regex = new RegExp(commentHTML.replace("{cid}", cid));
+    var html = exploitSingle(res, regex);
+    var article = exploitData(res, commentMeta);
+    if (html) {
+        var data = exploitData(html, commentContent);
+        data["article"] = article;
+        var clean = data["text"].replace(/<\/?[^>]+(>|$)/g, "");
+        if (!query || (query && clean.match(new RegExp(query, "i")))) {
+            data["cid"] = cid;
+            drawComment(data, query);
+        }
     }
 }
 
@@ -130,6 +254,12 @@ exploitMultiple = function (data, rule) {
         if (a) res.push(a[1]);
     } while (a);
     return res;
+}
+
+exploitSingle = function (data, rule) {
+    var a = rule.exec(data);
+    if (a && a.length > 1)
+        return a[1];
 }
 
 var clear = function () {
@@ -188,15 +318,17 @@ var ajax = function (query, type, callback) {
     </head>
     <body>
         
-        <div id="searchform">
-            <input type="text" id="searchuser" placeholder="Benutzer" value="Gertrud H."></input>
-            <label for="searchuser">Benutzername, Benutzer-ID, Benutzer-URL</label>
-            <input type="text" id="searchquery" placeholder="Suchbegriff"></input>
-            <label for="searchuser">Suchbegriff (Leer für alle Kommentare)</label>
-            <button id="searchsubmit">Suchen</button>
+        <div id="header">
+            <div id="searchform" class="block">
+                <label for="searchuser">Benutzername, Benutzer-ID, Benutzer-URL</label>
+                <input type="text" id="searchuser" placeholder="Benutzer" value="Gertrud H."></input>
+                <label for="searchuser">Suchbegriff (Leer für alle Kommentare)</label>
+                <input type="text" id="searchquery" placeholder="Suchbegriff"></input>
+                <button id="searchsubmit">Suchen</button>
+            </div>
         </div>
         
-        <div id="userdata">
+        <div id="userdata" class="block">
             <a href="" id="userlink" target="_blank">
                 <div id="useravatar"></div>
                 <div id="username"></div>
@@ -204,8 +336,265 @@ var ajax = function (query, type, callback) {
             </a>
         </div>
         
-        <ul id="infos"></ul>
+        <ul id="infos" class="block"></ul>
         
-        <ul id="list"></ul>
+        <ul id="list" class="block"></ul>
         
-        <div id="help">
+        <div id="nextpage" class="button">Mehr Laden</div>
+        
+        <div id="help"></div>
+    
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        outline: 0;
+        box-sizing: border-box;
+        font-size: 100%;
+        font-family: sans-serif;
+        font-weight: normal;
+        list-style: none;
+    }
+    body,html {
+        width: 100%;
+        height: 100%;
+        text-align: center;
+        
+        background: white;
+        color: #424242;
+        
+        line-height: 1.5em;
+    }
+    
+    a {
+        color: #990100;
+        text-decoration: none;
+    }
+        
+    b, strong {
+        font-weight: bold;
+    }
+        
+    
+    button, .button {
+        background: #990100;
+        color: white;
+        border: none;
+        cursor: pointer;
+    }
+    
+    .block {
+        width: 96%;
+        max-width: 960px;
+        text-align: left;
+        margin: auto;
+        margin-bottom: 24px;
+        clear: both;
+    }
+        
+    #header {
+        background: #E8E8E8;
+    }
+    #header #searchform {
+        padding-top: 16px;
+        padding-bottom: 8px;
+        position: relative;
+        height: 56px;
+    }
+    #header label {
+        font-size: 66%;
+        width: calc(50% - 8px - 32px);
+        line-height: 16px;
+        position: absolute;
+        top: 0;
+        left: 0;
+        opacity: 0.5;
+    }
+    #header label:nth-child(3) {
+        left: calc(50% - 32px);
+    }
+    #header input {
+        width: calc(50% - 8px - 32px);
+        margin-right: 8px;
+        float: left;
+        height: 32px;
+        line-height: 32px;
+        padding: 0 8px;
+        background: white;
+        border: 1px solid #999;
+    }
+    
+    #header button {
+        width: 64px;
+        position: absolute;
+        right: 0;
+        bottom: 8px;
+        top: 16px;
+    }
+    
+    @media screen and (max-width: 500px) {
+        #header #searchform {
+            height: auto;
+            padding-top: 0;
+        }
+        #header label {
+            display: block;
+            width: calc(100% - 72px);
+            position: relative;
+            opacity: 0.5;
+            left: 0 !important;
+        }
+        #header input {
+            display: block;
+            width: calc(100% - 72px);
+            margin: 0px;
+            float: none;
+        }
+    }
+    
+    
+    #userdata {
+        height: 64px;
+        display: none;
+    }
+    .active #userdata {
+        display: block;
+    }
+    #userlink {
+        
+    }
+    #useravatar {
+        width: 64px;
+        height: 64px;
+        float: left;
+        margin-right: 8px;
+        
+        -webkit-background-size: cover;
+        -moz-background-size:    cover;
+        -ms-background-size:     cover;
+        -o-background-size:      cover;
+        background-size:         cover;
+        
+        -webkit-border-radius: 100%;
+        -moz-border-radius: 100%;
+        border-radius: 100%;
+    }
+    #username {
+        font-size: 200%;
+        color: #424242 !important;
+    }
+    #userrec {
+        font-size: 80%;
+    }
+    #userrec::before {
+        content: "Redaktionsempfehlungen: ";
+    }
+    
+    
+    
+    #infos {
+        
+    }
+    #infos li {
+        background: #F6F6F6;
+        padding: 8px;
+        margin-bottom: 2px;
+    }
+    #infos li::before {
+        content: "◾";
+        margin-right: 8px;
+        color: #990100;
+    }
+    
+    
+    #list > li {
+        margin-bottom: 96px;
+        position: relative;
+    }
+    
+    
+    
+    #list .meta {
+        margin-bottom: 4px;
+    }
+    #list .time {
+        float: left;
+        margin-right: 8px;
+    }
+    #list .likes {
+        float: right;
+        opacity: 0.5;
+    }
+    #list .likes::before {
+        content: "★";
+    }
+    #list .link {
+        color: #aaa;
+        font-size: 80%;
+        line-height: 120%;
+        
+        display: block;
+        text-align: right;
+        clear: both;
+    }
+    #list .comment__origin {
+        font-size: 70%;
+        color: #434343;
+    }
+    #list .comment__origin::before {
+        content: "(";
+    }
+    #list .comment__origin::after {
+        content: ")";
+    }
+    
+    
+    #list .comment {
+        margin-bottom: 4px;
+        padding: 1em;
+        background: #f3f3f3;
+    }
+    
+    #list .comment p {
+        margin-bottom: 1.5em;
+    }
+    
+    
+    
+    #list .article {
+        font-size: 90%;
+        text-align: right;
+    }
+    #list .article * {
+        display: inline-block;
+        line-height: 120%;
+    }
+    #list .article h4::after {
+        content: ":";
+        margin-right: 0.5em;
+    }
+    #list .article h3 {
+        font-size: 100%;
+    }
+    
+    
+    
+    #nextpage {
+        height: 32px;
+        line-height: 32px;
+        display: inline-block;
+        padding: 0 12px;
+        display: none;
+    }
+    #nextpage.visible {
+        display: block;
+    }
+    
+    
+    .query {
+        background: #cfff00;
+    }
+</style>
+            
+    </body>
+</html>
