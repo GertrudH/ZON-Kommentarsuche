@@ -101,7 +101,6 @@ var search = function (e) {
     var uurl = userURL.replace("{user}", u);
     
     ajax(uurl, "html", function (r) {
-        console.log(r)
         fetchUser(r, uurl, u);
         fetchComments(r, u, q);
         fetchNextPage(r, u, q);

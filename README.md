@@ -5,6 +5,10 @@ Durchsuche Kommentare eines Benutzers auf ZON
 
 Diese Webapplikation für Chrome/Chromium durchsucht die Kommentare eines Benutzers der [ZEIT Online](http://www.zeit.de/index) nach einem Suchbegriff. Weglassen des Suchbegriffes zeigt alle Kommentare des Benutzers an. 
 
+## Anmerkung
+
+Das Ganze ist dirty. _Super_ dirty. ZON hat kein API, keine Queries auf RSS, kein REST, deswegen ruft dieses Script auch die kompletten Webseiten ab und parst die gewünschten Daten heraus.
+
 ## Lizenz
 
 Die Software steht unter der DWTFYW-Lizenz.
