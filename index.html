@@ -85,6 +85,9 @@ var search = function (e) {
     var u = searchuser.value;
     var q = searchquery.value;
     
+    if (u.substr(0, 7) == "http://") {
+        u = u.substr(u.lastIndexOf("/"));
+    }
     u = u.toLowerCase();
     u = u.replace(/ /g, "-");
     u = u.replace(/[^0-9a-zA-Z\-]/g, "");
@@ -98,6 +101,7 @@ var search = function (e) {
     var uurl = userURL.replace("{user}", u);
     
     ajax(uurl, "html", function (r) {
+        console.log(r)
         fetchUser(r, uurl, u);
         fetchComments(r, u, q);
         fetchNextPage(r, u, q);
@@ -180,8 +184,15 @@ var fetchUser = function (res, url, user) {
     }
     var data = exploitData(res, userData);
     username.innerHTML = data.name;
-    userrec.innerHTML = data.rec;
-    useravatar.style.backgroundImage = "url('" + data.pic + "')";
+    userrec.innerHTML = data.rec || "0";
+    if (data.pic) {
+        useravatar.style.backgroundImage = "url('" + data.pic + "')";
+        useravatar.style.display = "block";
+    } else {
+        useravatar.style.backgroundImage = null;
+        useravatar.style.display = "none";
+    }
+    
     userlink.href = url;
     document.body.classList.add("active")
 }
@@ -206,7 +217,6 @@ var fetchNextPage = function (res, user, query) {
             fetchComments(r, user, query);
             if (query) {
                 fetchNextPage(r, user, query);
-                console.log("next")
             } else {
                 nextpage.classList.add("visible");
                 nextpage.onclick = function () {
@@ -255,7 +265,6 @@ exploitMultiple = function (data, rule) {
     } while (a);
     return res;
 }
-
 exploitSingle = function (data, rule) {
     var a = rule.exec(data);
     if (a && a.length > 1)
@@ -300,8 +309,9 @@ var ajax = function (query, type, callback) {
             if (request.responseText) {
                 if (type == "js" || type == "json")
                     callback(eval('(' + request.responseText + ')'));
-                else
+                else {
                     callback(request.responseText);
+                }
             } else
                 callback();
         } else if (request.readyState == 4) {
@@ -321,7 +331,7 @@ var ajax = function (query, type, callback) {
         <div id="header">
             <div id="searchform" class="block">
                 <label for="searchuser">Benutzername, Benutzer-ID, Benutzer-URL</label>
-                <input type="text" id="searchuser" placeholder="Benutzer" value="Gertrud H."></input>
+                <input type="text" id="searchuser" placeholder="Benutzer"></input>
                 <label for="searchuser">Suchbegriff (Leer für alle Kommentare)</label>
                 <input type="text" id="searchquery" placeholder="Suchbegriff"></input>
                 <button id="searchsubmit">Suchen</button>
@@ -508,7 +518,7 @@ var ajax = function (query, type, callback) {
     
     
     #list > li {
-        margin-bottom: 96px;
+        margin-bottom: 40px;
         position: relative;
     }
     
